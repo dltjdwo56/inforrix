@@ -10,7 +10,8 @@ html {
 }
 
 body {
-  background: #F4F5F7;
+  background: #0D1117;
+  color: #E6EDF3;
 }
 
 @keyframes slideDown {
@@ -30,7 +31,12 @@ body {
 
 @keyframes breathe {
   0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.12); }
+  50% { transform: scale(1.08); }
+}
+
+@keyframes glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(49,130,246,0.1); }
+  50% { box-shadow: 0 0 30px rgba(49,130,246,0.2); }
 }
 
 input:focus {

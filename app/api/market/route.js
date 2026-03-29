@@ -26,12 +26,13 @@ export async function GET() {
 
   // 2. 주식/원자재 가져오기 (Finnhub, 무료)
   const symbols = [
-    { id: 'spy', symbol: 'SPY', label: 'S&P 500 ETF', icon: '📈' },
-    { id: 'qqq', symbol: 'QQQ', label: '나스닥 100 ETF', icon: '💻' },
-    { id: 'aapl', symbol: 'AAPL', label: '애플', icon: '🍎' },
-    { id: 'tsla', symbol: 'TSLA', label: '테슬라', icon: '🚗' },
-    { id: 'gld', symbol: 'GLD', label: '금 ETF', icon: '✨' },
-    { id: 'uso', symbol: 'USO', label: '원유 ETF', icon: '⛽' },
+    { id: 'spy', symbol: 'SPY', label: 'S&P 500 ETF', icon: '📈', category: 'stock' },
+    { id: 'qqq', symbol: 'QQQ', label: '나스닥 100 ETF', icon: '💻', category: 'stock' },
+    { id: 'aapl', symbol: 'AAPL', label: '애플', icon: '🍎', category: 'stock' },
+    { id: 'tsla', symbol: 'TSLA', label: '테슬라', icon: '🚗', category: 'stock' },
+    { id: 'gld', symbol: 'GLD', label: '금', icon: '✨', category: 'commodity' },
+    { id: 'slv', symbol: 'SLV', label: '은', icon: '🪙', category: 'commodity' },
+    { id: 'uso', symbol: 'USO', label: '원유', icon: '⛽', category: 'commodity' },
   ];
 
   if (FINNHUB_KEY) {
@@ -42,18 +43,22 @@ export async function GET() {
           { next: { revalidate: 300 } }
         );
         const data = await res.json();
-        if (data.c && data.c !== 0) {
+        const price = data.c && data.c !== 0 ? data.c : data.pc;
+        if (price && price !== 0) {
+          const isOpen = data.c && data.c !== 0;
           results.stocks.push({
             id: s.id,
             symbol: s.symbol,
             label: s.label,
             icon: s.icon,
-            price: data.c,
-            change: data.dp,
-            open: data.o,
-            high: data.h,
-            low: data.l,
-            prevClose: data.pc,
+            category: s.category || 'stock',
+            price: price,
+            change: data.dp || 0,
+            open: data.o || price,
+            high: data.h || price,
+            low: data.l || price,
+            prevClose: data.pc || price,
+            marketOpen: isOpen,
           });
         }
       } catch (e) {
