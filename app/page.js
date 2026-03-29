@@ -78,6 +78,22 @@ export default function Home() {
   const [email, setEmail] = useState('');
   const [greeting, setGreeting] = useState('');
 
+ const [searchQuery, setSearchQuery] = useState('');
+  const [searchResult, setSearchResult] = useState(null);
+  const [searching, setSearching] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+
+  const doSearch = useCallback(async () => {
+    if (!searchQuery.trim()) return;
+    setSearching(true); setSearchResult(null);
+    try {
+      const res = await fetch(`/api/search?q=${encodeURIComponent(searchQuery.trim())}`);
+      const d = await res.json();
+      setSearchResult(d);
+    } catch { setSearchResult({ error: '검색에 실패했어요' }); }
+    setSearching(false);
+  }, [searchQuery]);
+
   useEffect(() => {
     const h = new Date().getHours();
     setGreeting(h < 12 ? '좋은 아침이에요' : h < 18 ? '좋은 오후예요' : '좋은 저녁이에요');
@@ -136,6 +152,130 @@ export default function Home() {
             <div style={{ fontSize: 11, color: C.text3, marginTop: 1 }}>{mood.detail || '데이터를 가져오고 있어요...'}</div>
           </div>
         </div>
+      </div>
+
+<div style={{ padding: '16px 16px 0' }}>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{ flex: 1, position: 'relative' }}>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && doSearch()}
+              placeholder="기업명 또는 티커 검색 (예: 애플, TSLA)"
+              style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: `1px solid ${C.border}`, fontSize: 13, background: C.card, color: C.text1 }}
+            />
+          </div>
+          <button onClick={doSearch} disabled={searching} style={{ padding: '12px 16px', borderRadius: 12, border: 'none', background: C.accent, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: searching ? 0.6 : 1, whiteSpace: 'nowrap' }}>
+            {searching ? '...' : '검색'}
+          </button>
+        </div>
+
+        {/* 검색 결과 */}
+        {searching && (
+          <div style={{ textAlign: 'center', padding: '24px 0' }}>
+            <div style={{ fontSize: 24, animation: 'breathe 1s infinite', marginBottom: 8 }}>🔍</div>
+            <div style={{ fontSize: 13, color: C.text3 }}>검색 중...</div>
+          </div>
+        )}
+
+        {searchResult && !searching && (
+          <div style={{ marginTop: 10, animation: 'fadeUp 0.3s' }}>
+
+            {searchResult.error && (
+              <Card style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 13, color: C.text2, textAlign: 'center', padding: '8px 0' }}>{searchResult.error}</div>
+              </Card>
+            )}
+
+            {searchResult.quote && (
+              <Card style={{ marginBottom: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                  {searchResult.profile?.logo && (
+                    <img src={searchResult.profile.logo} alt="" style={{ width: 36, height: 36, borderRadius: 8, background: '#fff' }} />
+                  )}
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: C.text1 }}>
+                      {searchResult.profile?.name || searchResult.symbol}
+                    </div>
+                    <div style={{ fontSize: 11, color: C.text3, marginTop: 1 }}>
+                      {searchResult.symbol} · {searchResult.profile?.industry || ''} · {searchResult.profile?.country || ''}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 주가 */}
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 12 }}>
+                  <div style={{ fontSize: 28, fontWeight: 700, color: C.text1, fontVariantNumeric: 'tabular-nums' }}>
+                    ${searchResult.quote.price?.toFixed(2)}
+                  </div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: searchResult.quote.changePercent >= 0 ? C.up : C.down }}>
+                    {searchResult.quote.changePercent >= 0 ? '▲' : '▼'} {Math.abs(searchResult.quote.changePercent)?.toFixed(2)}%
+                  </div>
+                  {!searchResult.quote.marketOpen && (
+                    <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 8, background: C.dangerDim, color: C.text3 }}>마감</span>
+                  )}
+                </div>
+
+                {/* 시가/고가/저가/전일종가 */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 4 }}>
+                  {[
+                    { l: '시가', v: searchResult.quote.open },
+                    { l: '고가', v: searchResult.quote.high },
+                    { l: '저가', v: searchResult.quote.low },
+                    { l: '전일종가', v: searchResult.quote.prevClose },
+                  ].map(x => (
+                    <div key={x.l} style={{ background: C.bg, borderRadius: 8, padding: '6px 0', textAlign: 'center' }}>
+                      <div style={{ fontSize: 9, color: C.text3 }}>{x.l}</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: C.text2, fontVariantNumeric: 'tabular-nums', marginTop: 1 }}>${x.v?.toFixed(2)}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {searchResult.profile?.marketCap && (
+                  <div style={{ fontSize: 11, color: C.text3, marginTop: 8, textAlign: 'right' }}>
+                    시가총액: ${(searchResult.profile.marketCap / 1000).toFixed(1)}B
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {/* 관련 뉴스 */}
+            {searchResult.news?.length > 0 && (
+              <Card style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.text1, marginBottom: 10 }}>📰 관련 뉴스</div>
+                {searchResult.news.map((n, i) => {
+                  const ago = Math.round((Date.now() - n.datetime * 1000) / 3600000);
+                  return (
+                    <a key={i} href={n.url} target="_blank" rel="noopener noreferrer" style={{ display: 'block', padding: '10px 0', borderBottom: i < searchResult.news.length - 1 ? `1px solid ${C.border}` : 'none', textDecoration: 'none' }}>
+                      <div style={{ fontSize: 12, fontWeight: 500, color: C.text2, lineHeight: 1.45 }}>{n.headline}</div>
+                      <div style={{ fontSize: 10, color: C.text3, marginTop: 3 }}>
+                        {n.source} · {ago < 1 ? '방금' : ago < 24 ? `${ago}시간 전` : `${Math.round(ago / 24)}일 전`}
+                      </div>
+                    </a>
+                  );
+                })}
+              </Card>
+            )}
+
+            {/* AI 인사이트 */}
+            {searchResult.insight && (
+              <Card style={{ border: `1px solid ${C.accent}`, background: C.accentDim }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                  <span style={{ fontSize: 16 }}>🤖</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: C.accent }}>AI 종목 분석</span>
+                </div>
+                <div style={{ fontSize: 13, color: C.text2, lineHeight: 1.75, whiteSpace: 'pre-line' }}>{searchResult.insight}</div>
+                <div style={{ fontSize: 10, color: C.text3, marginTop: 8 }}>투자 결정은 본인의 판단으로 해주세요.</div>
+              </Card>
+            )}
+
+            {/* 닫기 */}
+            <div style={{ textAlign: 'center', padding: '8px 0' }}>
+              <span onClick={() => { setSearchResult(null); setSearchQuery(''); }} style={{ fontSize: 12, color: C.text3, cursor: 'pointer' }}>검색 결과 닫기 ✕</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 로딩 */}
