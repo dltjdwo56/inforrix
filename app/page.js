@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 const C = {
   bg: '#0D1117', card: '#161B22', border: '#30363D', borderActive: '#3182F6',
@@ -15,95 +15,12 @@ const f = (v, d = 2) => typeof v === 'number' ? (v >= 1000 ? Math.round(v).toLoc
 const fw = (v) => typeof v === 'number' ? Math.round(v).toLocaleString('ko-KR') + '원' : '—';
 const fd = (v) => v != null ? (typeof v === 'number' ? v.toFixed(2) : v) : '—';
 
-// 능동적 재무지표 설명 (실제 수치 기반)
-function explainMetric(label, value, financials, companyName) {
-  const name = companyName || '이 기업';
-  if (value === '—' || value == null) return `${name}의 ${label} 데이터가 없어요.`;
-  const num = parseFloat(String(value).replace(/[^0-9.-]/g, ''));
-  switch(label) {
-    case 'PER':
-      if (num < 0) return `${name}의 PER이 마이너스예요. 현재 적자 상태라는 뜻이에요. 성장 기업이라면 미래 이익을 기대하고 투자하는 경우가 많아요.`;
-      if (num < 15) return `${name}의 PER ${value}은 꽤 낮은 편이에요. 투자자들이 1원의 이익에 ${Math.round(num)}원을 지불하는 거예요. 저평가 구간일 수 있지만, 성장이 둔화된 건 아닌지도 확인해보세요.`;
-      if (num < 25) return `${name}의 PER ${value}은 적당한 수준이에요. 시장 평균(S&P 500 기준 약 20~25)과 비슷해요. 이익 대비 합리적인 가격이라는 뜻이에요.`;
-      if (num < 50) return `${name}의 PER ${value}은 높은 편이에요. 투자자들이 미래 성장을 기대하고 프리미엄을 지불하고 있어요. 실제 성장이 따라주는지가 관건이에요.`;
-      return `${name}의 PER ${value}은 매우 높아요. 시장이 이 기업의 미래에 큰 기대를 걸고 있다는 뜻이에요. 기대만큼 성장하지 못하면 주가 조정이 올 수 있어요.`;
-    case 'PBR':
-      if (num < 1) return `${name}의 PBR ${value}은 1 미만이에요. 회사가 가진 자산 가치보다 주가가 낮다는 뜻이에요. 숨은 가치가 있을 수 있지만, 시장이 비관적으로 보고 있는 것일 수도 있어요.`;
-      if (num < 3) return `${name}의 PBR ${value}은 일반적인 수준이에요. 자산 대비 주가가 적절하게 평가받고 있어요.`;
-      return `${name}의 PBR ${value}은 높아요. 자산 가치보다 주가가 훨씬 높은데, 브랜드·기술력 같은 무형 가치가 반영된 거예요. 테크 기업에서 흔한 수준이에요.`;
-    case 'ROE':
-      if (num < 0) return `${name}의 ROE가 마이너스예요. 투자한 돈으로 손실을 보고 있다는 뜻이에요. 일시적인 건지 구조적인 건지 확인이 필요해요.`;
-      if (num < 10) return `${name}의 ROE ${value}은 보통 수준이에요. 투자한 100원으로 ${Math.round(num)}원을 벌고 있어요. 은행 이자보다는 낫지만, 효율을 더 높일 여지가 있어요.`;
-      if (num < 20) return `${name}의 ROE ${value}은 우수해요! 투자한 100원으로 ${Math.round(num)}원을 벌고 있어요. 효율적으로 돈을 굴리고 있다는 뜻이에요.`;
-      return `${name}의 ROE ${value}은 매우 높아요! 투자한 100원으로 ${Math.round(num)}원이나 벌고 있어요. 업계 최고 수준의 수익 효율이에요. 워런 버핏이 좋아하는 지표예요.`;
-    case '배당률':
-      if (num < 0.5) return `${name}의 배당률 ${value}은 매우 낮아요. 이익을 배당보다 재투자에 쓰고 있어요. 성장주에서 흔한 패턴이에요.`;
-      if (num < 2) return `${name}의 배당률 ${value}은 보통 수준이에요. 은행 이자와 비슷하지만, 주가 상승까지 더하면 매력적일 수 있어요.`;
-      if (num < 4) return `${name}의 배당률 ${value}은 괜찮은 편이에요. 주가 100만원이면 매년 ${(num/100*1000000).toLocaleString()}원을 배당으로 받는 거예요.`;
-      return `${name}의 배당률 ${value}은 높은 편이에요! 안정적인 배당 수익을 원하는 투자자에게 매력적이에요. 다만 배당률이 너무 높으면 지속 가능한지 확인해보세요.`;
-    case '매출성장':
-      if (num < 0) return `${name}의 매출이 전년 대비 ${Math.abs(num).toFixed(1)}% 줄었어요. 경기 둔화나 경쟁 심화가 원인일 수 있어요. 일시적인지 구조적인지가 중요해요.`;
-      if (num < 10) return `${name}의 매출이 ${num.toFixed(1)}% 성장했어요. 안정적인 성장세예요. 급성장은 아니지만 꾸준히 커가고 있어요.`;
-      if (num < 30) return `${name}의 매출이 ${num.toFixed(1)}%나 성장했어요! 꽤 빠른 성장세예요. 이 속도가 유지된다면 2~3년 내 매출이 두 배가 될 수 있어요.`;
-      return `${name}의 매출이 ${num.toFixed(1)}%나 급성장했어요! 시장을 빠르게 확대하고 있어요. 고성장 기업의 전형적인 모습이에요.`;
-    case '순이익률':
-      if (num < 0) return `${name}이 매출은 있지만 적자예요. 매출 100원 중 ${Math.abs(num).toFixed(1)}원씩 손해를 보고 있어요. 투자 확대기일 수 있어요.`;
-      if (num < 10) return `${name}의 순이익률 ${value}은 보통이에요. 매출 100원 중 ${num.toFixed(1)}원이 순수익이에요. 업종에 따라 이 정도도 괜찮을 수 있어요.`;
-      if (num < 25) return `${name}의 순이익률 ${value}은 좋은 편이에요. 매출 100원 중 ${num.toFixed(1)}원이 순이익! 돈을 잘 버는 체질이에요.`;
-      return `${name}의 순이익률 ${value}은 매우 높아요! 매출 100원 중 ${num.toFixed(1)}원이 남아요. 경쟁자가 따라오기 어려운 수익 구조를 가지고 있어요.`;
-    case '52주고':
-      if (financials?.high52 && financials?.low52) {
-        const range = financials.high52 - financials.low52;
-        return `1년 중 최고가 ${value}이에요. 최저가 $${financials.low52.toFixed(0)}부터 여기까지 ${((range/financials.low52)*100).toFixed(0)}% 범위로 움직였어요. 현재가가 고점에 가까우면 단기 조정 가능성이 있어요.`;
-      }
-      return `1년 중 최고가 ${value}이에요. 현재가와 비교하면 고점 대비 어디쯤인지 알 수 있어요.`;
-    case '52주저':
-      if (financials?.high52 && financials?.low52) {
-        return `1년 중 최저가 ${value}이에요. 최고가 $${financials.high52.toFixed(0)}과 비교하면 이 기업의 주가 범위를 알 수 있어요. 저점 근처라면 반등 가능성이, 고점 근처라면 신중할 필요가 있어요.`;
-      }
-      return `1년 중 최저가 ${value}이에요. 현재가와 비교해 저점 대비 위치를 알 수 있어요.`;
-    default: return `${label}: ${value}`;
-  }
-}
 
 const FX_CONFIG = [
-  { key: 'usdkrw', icon: '🇺🇸', name: '달러', label: 'USD/KRW', tip: (v) => `1달러 = ${fw(v)}. 해외직구·달러 투자 참고.` },
-  { key: 'eurkrw', icon: '🇪🇺', name: '유로', label: 'EUR/KRW', tip: (v) => `1유로 = ${fw(v)}. 유럽 여행 참고.` },
-  { key: 'jpykrw', icon: '🇯🇵', name: '엔(100)', label: 'JPY100', tip: (v) => `100엔 = ${fw(v)}. 일본 여행 참고.` },
-  { key: 'cnykrw', icon: '🇨🇳', name: '위안', label: 'CNY/KRW', tip: (v) => `1위안 = ${fw(v)}. 알리·테무 직구 참고.` },
-];
-
-const TIPS = {
-  gld: { up: '금 상승 — 안전자산 수요 증가', down: '금 조정 — 장기적으론 견고' },
-  slv: { up: '은 상승 — 산업+투자 수요', down: '은 하락 — 변동성 큰 자산' },
-  uso: { up: '유가 상승 — 기름값 인상 가능', down: '유가 하락 — 기름값 안정 기대' },
-  spy: { up: '미국 대형주 상승', down: '미국 시장 하락' },
-  qqq: { up: '기술주 강세', down: '기술주 약세' },
-  aapl: { up: '애플 상승', down: '애플 하락' },
-  tsla: { up: '테슬라 반등', down: '테슬라 하락' },
-};
-
-const ECON_TERMS = [
-  { term: '기준금리', emoji: '🏦', desc: '한국은행이 정하는 금리. 오르면 대출 이자 ↑, 내리면 대출이 싸져요.' },
-  { term: '인플레이션', emoji: '📈', desc: '물가가 오르는 현상. 1,000원 김밥이 1,200원이면 20% 인플레이션.' },
-  { term: 'ETF', emoji: '📦', desc: '여러 주식을 한 바구니에 담은 상품. 분산 투자가 쉬워요.' },
-  { term: 'PER', emoji: '🔍', desc: '주가÷주당순이익. 낮으면 저평가, 높으면 고평가일 수 있어요.' },
-  { term: '배당', emoji: '💰', desc: '기업 이익의 일부를 주주에게 나눠주는 거예요.' },
-  { term: 'FOMC', emoji: '🇺🇸', desc: '미국 금리 결정 회의. 연 8회, 전 세계가 주목해요.' },
-  { term: '안전자산', emoji: '🛡️', desc: '경제 불안 시 오르는 자산. 금, 국채, 달러가 대표적.' },
-  { term: 'ROE', emoji: '📊', desc: '자기자본이익률. 높을수록 효율적인 경영이에요.' },
-  { term: 'CPI', emoji: '🛒', desc: '소비자물가지수. 장바구니 물가 변동을 보여줘요.' },
-  { term: '공매도', emoji: '📉', desc: '주가 하락에 베팅하는 거래. 빌린 주식을 먼저 팔아요.' },
-  { term: '시가총액', emoji: '🏢', desc: '주가 × 총 주식 수. 회사의 시장 가치예요.' },
-  { term: 'GDP', emoji: '🌍', desc: '나라가 1년간 만든 상품·서비스의 총 가치.' },
-  { term: '분산투자', emoji: '🧺', desc: '여러 자산에 나눠 투자해 리스크를 줄이는 전략.' },
-  { term: '블루칩', emoji: '💎', desc: '재무가 탄탄한 대형 우량주. 삼성전자, 애플 등.' },
-  { term: '유동성', emoji: '💧', desc: '시장에 돈이 얼마나 도는지. 풍부하면 자산 가격 ↑' },
-  { term: '서킷브레이커', emoji: '🔴', desc: '시장 급락 시 거래를 일시 정지하는 제도.' },
-  { term: '국채', emoji: '📜', desc: '정부가 발행하는 채권. 가장 안전한 투자 중 하나.' },
-  { term: '양적완화', emoji: '🖨️', desc: '중앙은행이 돈을 찍어서 시장에 푸는 정책.' },
-  { term: '달러 인덱스', emoji: '💵', desc: '달러 가치를 6개국 통화 대비로 측정한 지수.' },
-  { term: '변동성', emoji: '🎢', desc: '가격 흔들림 정도. 크면 수익도 손실도 클 수 있어요.' },
+  { key: 'usdkrw', icon: '🇺🇸', name: '달러', label: 'USD/KRW' },
+  { key: 'eurkrw', icon: '🇪🇺', name: '유로', label: 'EUR/KRW' },
+  { key: 'jpykrw', icon: '🇯🇵', name: '엔(100)', label: 'JPY100' },
+  { key: 'cnykrw', icon: '🇨🇳', name: '위안', label: 'CNY/KRW' },
 ];
 
 function Card({ children, onClick, active, style }) {
@@ -119,6 +36,9 @@ export default function Home() {
   const [exFx, setExFx] = useState(null);
   const [exCom, setExCom] = useState(null);
   const [exSt, setExSt] = useState(null);
+  const [fxInsights, setFxInsights] = useState({});
+  const [comInsights, setComInsights] = useState({});
+  const [insightLoading, setInsightLoading] = useState(null);
   const [showMoodDetail, setShowMoodDetail] = useState(false);
   const [showNews, setShowNews] = useState(false);
   const [showSub, setShowSub] = useState(false);
@@ -129,12 +49,53 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResult, setSearchResult] = useState(null);
   const [searching, setSearching] = useState(false);
+  const [liveSuggestions, setLiveSuggestions] = useState(null);
   const [metricTip, setMetricTip] = useState(null);
-  const [termIdx] = useState(() => Math.floor(Math.random() * ECON_TERMS.length));
+  const [metricInsight, setMetricInsight] = useState({});
+  const [metricInsightLoading, setMetricInsightLoading] = useState(null);
+  const [eterm, setEterm] = useState(null);
+  const [etermLoading, setEtermLoading] = useState(true);
+  const [termSearch, setTermSearch] = useState('');
   const [activeStocks, setActiveStocks] = useState([]);
+  const [newsIndex, setNewsIndex] = useState(0);
+  const [recStockIndex, setRecStockIndex] = useState(0);
+  const [kospiData, setKospiData] = useState(null);
 
 
-  useEffect(() => { const h = new Date().getHours(); setGreeting(h < 12 ? '좋은 아침이에요' : h < 18 ? '좋은 오후예요' : '좋은 저녁이에요'); }, []);
+  useEffect(() => { 
+    const now = new Date();
+    // 한국 시간(KST) 계산 (UTC+9)
+    const kstDate = new Date(now.getTime() + (now.getTimezoneOffset() + 9 * 60) * 60000);
+    const h = kstDate.getHours();
+    const m = kstDate.getMinutes();
+    const day = kstDate.getDay();
+    const time = h * 100 + m; // 예: 09:30 -> 930
+
+    if (day === 0 || day === 6) setGreeting('주말은 증시 휴장일이에요 😴');
+    else if (time < 900) setGreeting('코스피 개장 전이에요 🌅');
+    else if (time >= 900 && time < 1530) setGreeting('코스피 정규장 진행 중 📊');
+    else setGreeting('오늘 코스피 장이 마감되었어요 🌙');
+  }, []);
+
+  useEffect(() => {
+    fetch('/api/kospi')
+      .then(r => r.json())
+      .then(d => {
+        if (d.price) setKospiData(d);
+      })
+      .catch(() => {});
+  }, []);
+
+  const loadEterm = useCallback((query = '') => {
+    setEtermLoading(true);
+    fetch(`/api/econ-term${query ? `?q=${encodeURIComponent(query)}` : `?r=${Date.now()}`}`)
+      .then(r => r.json())
+      .then(d => { if (d.term) setEterm(d); })
+      .catch(() => {})
+      .finally(() => setEtermLoading(false));
+  }, []);
+
+  useEffect(() => { loadEterm(); }, [loadEterm]);
 
   // 1단계: 데이터 먼저 빠르게 로드
   useEffect(() => {
@@ -142,7 +103,9 @@ export default function Home() {
       try { const res = await fetch('/api/market'); setData(await res.json()); }
       catch { setError('데이터를 불러오지 못했어요'); }
       // 활발한 종목 로드
-      fetch('/api/active').then(r => r.json()).then(d => { if (d.stocks) setActiveStocks(d.stocks); }).catch(() => {});
+      fetch('/api/active').then(r => r.json()).then(d => { 
+        if (d.stocks) { setActiveStocks(d.stocks); }
+      }).catch(() => {});
       setLoading(false);
     })();
   }, []);
@@ -164,10 +127,50 @@ export default function Home() {
       .finally(() => setAiLoading(false));
   }, [data]);
 
-  const doSearch = useCallback(async () => {
-    if (!searchQuery.trim()) return;
+  // 뉴스 자동 슬라이드 타이머
+  useEffect(() => {
+    if (!data?.news?.length) return;
+    const timer = setInterval(() => {
+      setNewsIndex(prev => (prev + 1) % Math.min(data.news.length, 5));
+    }, 6000);
+    return () => clearInterval(timer);
+  }, [data]);
+
+  // 추천 종목 자동 슬라이드 타이머
+  useEffect(() => {
+    if (!activeStocks || activeStocks.length === 0) return;
+    const timer = setInterval(() => {
+      setRecStockIndex(prev => (prev + 1) % activeStocks.length);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [activeStocks]);
+
+  // 실시간 검색어 자동완성 (디바운스 350ms 적용)
+  useEffect(() => {
+    if (!searchQuery.trim() || searching || searchResult) {
+      setLiveSuggestions(null);
+      return;
+    }
+    let active = true;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(searchQuery.trim())}&type=suggest`);
+        if (!active) return;
+        const data = await res.json();
+        if (data.suggestions?.length > 0) setLiveSuggestions(data.suggestions);
+        else setLiveSuggestions(null);
+      } catch { if (active) setLiveSuggestions(null); }
+    }, 350);
+    return () => { active = false; clearTimeout(timer); };
+  }, [searchQuery, searching, searchResult]);
+
+  const doSearch = useCallback(async (queryOverride) => {
+    const targetQuery = typeof queryOverride === 'string' ? queryOverride : searchQuery;
+    if (!targetQuery.trim()) return;
+    if (typeof queryOverride === 'string') setSearchQuery(targetQuery);
+    setLiveSuggestions(null);
     setSearching(true); setSearchResult(null); setMetricTip(null);
-    try { const res = await fetch(`/api/search?q=${encodeURIComponent(searchQuery.trim())}`); setSearchResult(await res.json()); }
+    try { const res = await fetch(`/api/search?q=${encodeURIComponent(targetQuery.trim())}`); setSearchResult(await res.json()); }
     catch { setSearchResult({ error: '검색에 실패했어요' }); }
     setSearching(false);
   }, [searchQuery]);
@@ -176,8 +179,8 @@ export default function Home() {
   const dateStr = `${now.getMonth()+1}월 ${now.getDate()}일 ${['일','월','화','수','목','금','토'][now.getDay()]}요일`;
   const commodities = (data?.stocks || []).filter(s => ['gld','slv','uso'].includes(s.id));
   const stocks = (data?.stocks || []).filter(s => ['spy','qqq','aapl','tsla'].includes(s.id));
-  const eterm = ECON_TERMS[termIdx];
-
+  const vix = (data?.stocks || []).find(s => s.id === 'vix');
+  const recStock = activeStocks.length > 0 ? activeStocks[recStockIndex] : null;
   // AI 요약 or 로딩 상태
   const moodColors = { '상승': C.green, '하락': C.danger, '혼조': C.gold, '급등': C.green, '급락': C.danger, '관망': C.text2 };
   const mood = aiSummary ? {
@@ -185,17 +188,26 @@ export default function Home() {
     color: moodColors[aiSummary.mood] || C.gold,
     reasons: (aiSummary.signals||[]).map(s => ({ icon: s.emoji, text: s.insight, asset: s.asset, direction: s.direction })),
     actionTip: aiSummary.actionTip,
-  } : { emoji: aiLoading ? '🔄' : '📊', sum: aiLoading ? 'AI가 시장을 분석하고 있어요...' : '시장 데이터를 불러왔어요', detail: '', color: C.gold, reasons: [], actionTip: '' };
+  } : { emoji: aiLoading ? '🔄' : '🤖', sum: aiLoading ? 'AI가 시장을 분석하고 있어요...' : 'AI가 분석할 시장 데이터를 가져왔어요', detail: '', color: C.gold, reasons: [], actionTip: '' };
 
   return (
-    <div style={{ maxWidth: 560, margin: '0 auto', background: C.bg, minHeight: '100vh', paddingBottom: 60 }}>
+    <div style={{ maxWidth: 768, margin: '0 auto', background: C.bg, minHeight: '100vh', paddingBottom: 60 }}>
 
       {/* 헤더 */}
       <div style={{ background: C.card, padding: '36px 20px 18px', borderRadius: '0 0 20px 20px', borderBottom: `1px solid ${C.border}`, animation: 'fadeUp 0.4s' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ fontSize: 11, color: C.text3, letterSpacing: 0.5 }}>{dateStr}</div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: C.text1, marginTop: 2 }}>{greeting}</div>
+            <div style={{ fontSize: 12, color: C.text1, fontWeight: 700, letterSpacing: 0.5 }}>{dateStr}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 2, flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 22, fontWeight: 700, color: C.text1 }}>{greeting}</div>
+              {kospiData && (
+                <div style={{ padding: '4px 8px', background: C.bg, borderRadius: 8, border: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 6, animation: 'fadeUp 0.4s' }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: C.text3 }}>KOSPI</span>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: C.text1, fontVariantNumeric: 'tabular-nums' }}>{kospiData.price}</span>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: kospiData.isUp ? C.up : C.down }}>{kospiData.isUp ? '▲' : '▼'}{Math.abs(kospiData.changePercent)}%</span>
+                </div>
+              )}
+            </div>
           </div>
           <div style={{ fontSize: 14, fontWeight: 800, letterSpacing: 1.5 }}><span style={{ color: C.accent }}>INFO</span><span style={{ color: C.text1 }}>RIX</span></div>
         </div>
@@ -206,13 +218,13 @@ export default function Home() {
             <span style={{ fontSize: 26, animation: aiLoading ? 'breathe 1s infinite' : '' }}>{mood.emoji}</span>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: mood.color }}>{mood.sum}</div>
-              <div style={{ fontSize: 11, color: C.text3, marginTop: 1 }}>{aiLoading ? '실시간 데이터로 분석 중...' : aiSummary ? '탭해서 상세 분석 보기' : ''}</div>
+              {aiSummary && <div style={{ fontSize: 12, color: C.text1, marginTop: 4, lineHeight: 1.5 }}>{mood.detail}</div>}
+              <div style={{ fontSize: 11, color: C.text3, marginTop: aiSummary ? 6 : 1 }}>{aiLoading ? '실시간 데이터로 분석 중...' : aiSummary ? '▾ 탭해서 주요 시그널 보기' : ''}</div>
             </div>
-            {!aiLoading && <div style={{ fontSize: 12, color: C.text3, transform: showMoodDetail ? 'rotate(180deg)' : '', transition: 'transform 0.2s' }}>▾</div>}
+            {!aiLoading && !aiSummary && <div style={{ fontSize: 12, color: C.text3, transform: showMoodDetail ? 'rotate(180deg)' : '', transition: 'transform 0.2s' }}>▾</div>}
           </div>
           {showMoodDetail && aiSummary && (
             <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}`, animation: 'slideDown 0.25s' }}>
-              {mood.detail && <div style={{ fontSize: 12, color: C.text2, lineHeight: 1.7, marginBottom: 10 }}>{mood.detail}</div>}
               {mood.reasons?.length > 0 && (<>
                 <div style={{ fontSize: 11, fontWeight: 600, color: C.accent, marginBottom: 8 }}>주요 시그널</div>
                 {mood.reasons.map((r, i) => (
@@ -236,21 +248,113 @@ export default function Home() {
         </div>
       </div>
 
+      {/* 경제 단어 사전 */}
+      <div style={{padding:'12px 16px 0'}}>
+        <div style={{fontSize:13,fontWeight:700,color:C.text1,marginBottom:8}}>📚 경제 단어 사전</div>
+        <div style={{background:'#ffffff',borderRadius:14,padding:'16px',border:'1px solid #e8e8e8'}}>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+            <input type="text" value={termSearch} onChange={e => setTermSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && termSearch.trim() && loadEterm(termSearch.trim())} placeholder="궁금한 경제 단어 검색 (예: 공매도, ETF)" style={{ flex: 1, padding: '10px 12px', borderRadius: 8, border: '1px solid #ddd', fontSize: 12, background: '#f5f5f5', color: '#111111' }} />
+            <button onClick={() => termSearch.trim() && loadEterm(termSearch.trim())} style={{ padding: '10px 16px', borderRadius: 8, border: 'none', background: C.gold, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>검색</button>
+          </div>
+          {etermLoading || !eterm ? (
+            <div style={{fontSize:12,color:'#888888',textAlign:'center',padding:'20px 0'}}>단어를 분석하고 있어요...</div>
+          ) : (<>
+            <div style={{display:'flex',alignItems:'center',gap:14}}>
+              <div style={{fontSize:32}}>{eterm.emoji}</div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:15,fontWeight:700,color:'#111111',marginBottom:4}}>{eterm.term}</div>
+                <div style={{fontSize:12,color:'#444444',lineHeight:1.6}}>{eterm.desc}</div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              <a href={`https://search.naver.com/search.naver?where=news&query=${encodeURIComponent(eterm.term)}`} target="_blank" rel="noopener noreferrer" style={{ flex: 1, textAlign: 'center', fontSize: 11, fontWeight: 600, color: C.gold, padding: '8px 10px', background: '#fff8ee', borderRadius: 8, border: `1px solid ${C.gold}`, textDecoration: 'none' }}>📰 관련 뉴스 보기</a>
+              <div onClick={()=>{setTermSearch(''); loadEterm();}} style={{ flex: 1, textAlign: 'center', fontSize: 11, fontWeight: 600, color: '#555555', cursor: 'pointer', padding: '8px 10px', background: '#f5f5f5', borderRadius: 8, border: '1px solid #ddd' }}>다른 단어 랜덤 ↻</div>
+            </div>
+          </>)}
+        </div>
+      </div>
+
       {/* 검색바 */}
       <div style={{ padding: '14px 16px 0' }}>
+        {recStock && !searching && !searchResult && (
+          <div onClick={() => doSearch(recStock.symbol)} style={{ marginBottom: 12, padding: '12px 14px', background: C.accentDim, borderRadius: 12, border: `1px solid ${C.accent}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', animation: 'fadeUp 0.4s' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 22 }}>🔥</span>
+              <div key={recStock.symbol} style={{ animation: 'fadeUp 0.4s' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.accent }}>오늘의 추천 거래 종목</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.text1, marginTop: 2 }}>{recStock.symbol} <span style={{ fontSize: 11, fontWeight: 600, color: recStock.change > 0 ? C.up : C.down, marginLeft: 4 }}>{recStock.change > 0 ? '▲' : '▼'}{Math.abs(recStock.change).toFixed(2)}%</span></div>
+              </div>
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: C.accent, padding: '6px 10px', background: C.bg, borderRadius: 8, border: `1px solid ${C.borderActive}` }}>AI 분석 〉</div>
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 6 }}>
-          <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && doSearch()}
-            placeholder="종목 검색 (예: 애플, 테슬라, MSFT)" style={{ flex: 1, padding: '11px 14px', borderRadius: 12, border: `1px solid ${C.border}`, fontSize: 13, background: C.card, color: C.text1 }} />
+          <div style={{ flex: 1, position: 'relative' }}>
+            <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && doSearch()}
+              placeholder="종목 검색 (예: 애플, 테슬라, MSFT)" style={{ width: '100%', padding: '11px 14px', borderRadius: 12, border: `1px solid ${C.border}`, fontSize: 13, background: C.card, color: C.text1, boxSizing: 'border-box' }} />
+            
+            {liveSuggestions && (
+              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, background: C.card, borderRadius: 12, border: `1px solid ${C.border}`, zIndex: 50, overflow: 'hidden', animation: 'fadeUp 0.2s', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+                {liveSuggestions.map((s, i) => (
+                  <div key={s.symbol} onClick={() => doSearch(s.symbol)} style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', borderBottom: i < liveSuggestions.length - 1 ? `1px solid ${C.border}` : 'none', background: C.bg }}>
+                    {s.logo ? <img src={s.logo} alt="" style={{ width: 24, height: 24, borderRadius: 6, background: '#fff' }} /> : <div style={{ width: 24, height: 24, borderRadius: 6, background: C.border, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10 }}>🏢</div>}
+                    <div style={{ flex: 1, overflow: 'hidden' }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: C.text1 }}>{s.symbol}</div>
+                      <div style={{ fontSize: 11, color: C.text2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{s.description}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <button onClick={doSearch} disabled={searching} style={{ padding: '11px 16px', borderRadius: 12, border: 'none', background: C.accent, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: searching ? 0.6 : 1 }}>{searching ? '...' : '🔍'}</button>
         </div>
       </div>
 
       {/* 검색 결과 */}
-      {searching && <div style={{ textAlign: 'center', padding: '20px 0' }}><div style={{ fontSize: 22, animation: 'breathe 1s infinite' }}>🔍</div><div style={{ fontSize: 12, color: C.text3, marginTop: 6 }}>종목 정보를 가져오고 있어요...</div></div>}
+      {searching && <div style={{ textAlign: 'center', padding: '30px 0' }}><div style={{ fontSize: 32, animation: 'breathe 1s infinite' }}>🤖</div><div style={{ fontSize: 14, fontWeight: 700, color: C.text1, marginTop: 12 }}>AI가 기업 정보를 분석하고 있어요...</div><div style={{ fontSize: 12, color: C.text3, marginTop: 4 }}>실시간 주가와 뉴스를 종합하는 중이에요</div></div>}
       {searchResult && !searching && (
         <div style={{ padding: '10px 16px 0', animation: 'fadeUp 0.3s' }}>
           {searchResult.error && <Card><div style={{ fontSize: 13, color: C.text2, textAlign: 'center', padding: '6px 0' }}>{searchResult.error}</div></Card>}
+          
+          {searchResult.suggestions && (
+            <Card style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.text1, marginBottom: 10 }}>🤔 혹시 이 종목을 찾으시나요?</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {searchResult.suggestions.map(s => (
+                  <div key={s.symbol} onClick={() => doSearch(s.symbol)} style={{ padding: '10px 12px', background: C.bg, borderRadius: 8, cursor: 'pointer', border: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {s.logo ? <img src={s.logo} alt="" style={{ width: 28, height: 28, borderRadius: 6, background: '#fff' }} /> : <div style={{ width: 28, height: 28, borderRadius: 6, background: C.border, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12 }}>🏢</div>}
+                    <div style={{ overflow: 'hidden' }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: C.text1 }}>{s.symbol}</div>
+                      <div style={{ fontSize: 11, color: C.text2, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.description}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
           {searchResult.quote && (<>
+            {searchResult.insight && (
+              <Card style={{ border: `1px solid ${C.accent}`, background: C.accentDim, marginBottom: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                  <span style={{ fontSize: 16 }}>🤖</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: C.accent }}>AI 종목 브리핑</span>
+                </div>
+                <div style={{ fontSize: 12, lineHeight: 1.6 }}>
+                  {searchResult.insight.split('\n').map((line, i) => {
+                    if (!line.trim()) return null;
+                    if (line.trim().startsWith('[')) {
+                      const match = line.match(/(\[.*?\])(.*)/);
+                      if (match) {
+                        return (<div key={i} style={{ marginTop: i === 0 ? 0 : 10 }}><span style={{ fontWeight: 700, color: C.accent }}>{match[1]}</span><span style={{ color: C.text1 }}>{match[2]}</span></div>);
+                      }
+                    }
+                    return <div key={i} style={{ color: C.text2, marginTop: 2 }}>{line}</div>;
+                  })}
+                </div>
+              </Card>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
               <Card>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
@@ -269,10 +373,17 @@ export default function Home() {
                 </div>
               </Card>
               <Card>
-                <div style={{ fontSize: 12, fontWeight: 700, color: C.text1, marginBottom: 8 }}>📋 재무지표 <span style={{ fontSize: 9, color: C.text3 }}>탭→설명</span></div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: C.text1, marginBottom: 8 }}>
+                  {searchResult.type === 'ETF' ? '📦 ETF 지표' : ' 재무지표'} <span style={{ fontSize: 9, color: C.text3 }}>탭→설명</span>
+                </div>
                 {searchResult.financials ? (<div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
-                    {[
+                    {(searchResult.type === 'ETF' ? [
+                      {l:'52주고',v:searchResult.financials.high52?'$'+searchResult.financials.high52.toFixed(0):'—'},
+                      {l:'52주저',v:searchResult.financials.low52?'$'+searchResult.financials.low52.toFixed(0):'—'},
+                      {l:'배당률',v:searchResult.financials.dividendYield?searchResult.financials.dividendYield.toFixed(2)+'%':'—'},
+                      {l:'베타',v:searchResult.financials.beta?searchResult.financials.beta.toFixed(2):'—'}
+                    ] : [
                       {l:'PER',v:fd(searchResult.financials.pe)},{l:'PBR',v:fd(searchResult.financials.pb)},
                       {l:'ROE',v:searchResult.financials.roe?searchResult.financials.roe.toFixed(1)+'%':'—'},
                       {l:'배당률',v:searchResult.financials.dividendYield?searchResult.financials.dividendYield.toFixed(2)+'%':'—'},
@@ -280,8 +391,24 @@ export default function Home() {
                       {l:'순이익률',v:searchResult.financials.netMargin?searchResult.financials.netMargin.toFixed(1)+'%':'—'},
                       {l:'52주고',v:searchResult.financials.high52?'$'+searchResult.financials.high52.toFixed(0):'—'},
                       {l:'52주저',v:searchResult.financials.low52?'$'+searchResult.financials.low52.toFixed(0):'—'},
-                    ].map(x=>(
-                      <div key={x.l} onClick={e=>{e.stopPropagation();setMetricTip(metricTip===x.l?null:x.l)}}
+                    ]).map(x=>(
+                      <div key={x.l} onClick={e=>{
+                        e.stopPropagation();
+                        if (metricTip === x.l) { setMetricTip(null); return; }
+                        setMetricTip(x.l);
+                        if (metricInsight[x.l]) return;
+                        setMetricInsightLoading(x.l);
+                        const fin = searchResult.financials;
+                        const companyName = searchResult.profile?.name || searchResult.symbol;
+                        fetch('/api/ai', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
+                          type:'metric-explain', metric:x.l, value:x.v, company:companyName,
+                          financials: { pe:fin.pe, pb:fin.pb, roe:fin.roe, revenueGrowth:fin.revenueGrowth, netMargin:fin.netMargin, dividendYield:fin.dividendYield, beta:fin.beta, high52:fin.high52, low52:fin.low52, currentPrice:fin.currentPrice }
+                        })})
+                        .then(r=>r.json())
+                        .then(d=>{ if(d.insight) setMetricInsight(prev=>({...prev,[x.l]:d.insight})); })
+                        .catch(()=>{})
+                        .finally(()=>setMetricInsightLoading(null));
+                      }}
                         style={{background:metricTip===x.l?C.accentDim:C.bg,borderRadius:6,padding:'5px 6px',cursor:'pointer',border:metricTip===x.l?`1px solid ${C.accent}`:'1px solid transparent'}}>
                         <div style={{fontSize:9,color:metricTip===x.l?C.accent:C.text3}}>{x.l}</div>
                         <div style={{fontSize:12,fontWeight:600,color:C.text1,fontVariantNumeric:'tabular-nums'}}>{x.v}</div>
@@ -289,28 +416,56 @@ export default function Home() {
                     ))}
                   </div>
                   {metricTip && (<div style={{marginTop:6,padding:'8px 10px',background:C.accentDim,borderRadius:8,animation:'slideDown 0.2s'}}>
-                    <div style={{fontSize:11,color:C.accent,fontWeight:600,marginBottom:3}}>{metricTip} 분석</div>
-                    <div style={{fontSize:11,color:C.text2,lineHeight:1.7}}>{explainMetric(metricTip, metricTip==='52주고'?'$'+searchResult.financials.high52?.toFixed(0):metricTip==='52주저'?'$'+searchResult.financials.low52?.toFixed(0):metricTip==='PER'?fd(searchResult.financials.pe):metricTip==='PBR'?fd(searchResult.financials.pb):metricTip==='ROE'?searchResult.financials.roe?.toFixed(1)+'%':metricTip==='배당률'?searchResult.financials.dividendYield?.toFixed(2)+'%':metricTip==='매출성장'?searchResult.financials.revenueGrowth?.toFixed(1)+'%':searchResult.financials.netMargin?.toFixed(1)+'%', searchResult.financials, searchResult.profile?.name || searchResult.symbol)}</div>
+                    <div style={{fontSize:11,color:C.accent,fontWeight:600,marginBottom:3}}>{metricTip} AI 분석</div>
+                    {metricInsightLoading === metricTip
+                      ? <div style={{fontSize:11,color:C.text3}}>분석 중...</div>
+                      : <div style={{fontSize:11,color:C.text2,lineHeight:1.7,whiteSpace:'pre-wrap'}}>{metricInsight[metricTip] || '데이터를 불러오지 못했어요.'}</div>
+                    }
                   </div>)}
-                </div>):<div style={{fontSize:11,color:C.text3}}>재무 데이터 없음</div>}
-                {searchResult.recommendation && (<div style={{marginTop:8}}>
-                  <div style={{fontSize:10,color:C.text3,marginBottom:4}}>🎯 애널리스트</div>
-                  <div style={{display:'flex',gap:2,height:16,borderRadius:4,overflow:'hidden'}}>
-                    {[{v:searchResult.recommendation.strongBuy,c:'#00C471'},{v:searchResult.recommendation.buy,c:'#3182F6'},{v:searchResult.recommendation.hold,c:'#F5A623'},{v:searchResult.recommendation.sell,c:'#F04452'},{v:searchResult.recommendation.strongSell,c:'#8B0000'}].filter(x=>x.v>0).map((x,i)=><div key={i} style={{flex:x.v,background:x.c,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:8,color:'#fff',fontWeight:700}}>{x.v}</span></div>)}
+                </div>) : (
+                  <div style={{fontSize:11,color:C.text2,lineHeight:1.6}}>
+                    {searchResult.type === 'ETF' ? 'ETF는 개별 기업이 아닌 펀드 상품이라 일반적인 기업 재무제표(PER 등)가 제공되지 않아요. 대신 배당이나 운용사를 확인해보세요.' : '재무 데이터를 불러올 수 없어요.'}
                   </div>
-                  <div style={{display:'flex',justifyContent:'space-between',marginTop:2}}><span style={{fontSize:9,color:C.green}}>매수</span><span style={{fontSize:9,color:C.danger}}>매도</span></div>
-                </div>)}
+                )}
+                {searchResult.recommendation && (() => {
+                  const r = searchResult.recommendation;
+                  const total = r.strongBuy + r.buy + r.hold + r.sell + r.strongSell;
+                  if (total === 0) return null;
+                  const data = [
+                    { l: '강력매수', v: r.strongBuy, c: '#00C471' },
+                    { l: '매수', v: r.buy, c: '#3182F6' },
+                    { l: '보유', v: r.hold, c: '#F5A623' },
+                    { l: '매도', v: r.sell, c: '#F04452' },
+                    { l: '강력매도', v: r.strongSell, c: '#8B0000' }
+                  ];
+                  return (
+                    <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${C.border}` }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: C.text1 }}>🎯 애널리스트 의견</div>
+                        <div style={{ fontSize: 10, color: C.text3 }}>총 {total}명</div>
+                      </div>
+                      <div style={{ display: 'flex', height: 10, borderRadius: 5, overflow: 'hidden', marginBottom: 12 }}>
+                        {data.filter(x => x.v > 0).map((x, i, arr) => (
+                          <div key={i} style={{ flex: x.v, background: x.c, borderRight: i < arr.length - 1 ? `2px solid ${C.card}` : 'none' }} />
+                        ))}
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        {data.map((x, i) => (
+                          <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', opacity: x.v > 0 ? 1 : 0.3 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: x.v > 0 ? x.c : C.text3 }}>{x.v}</div>
+                            <div style={{ fontSize: 10, color: C.text2, marginTop: 2 }}>{x.l}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
               </Card>
             </div>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
+            <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:8}}>
               {searchResult.news?.length > 0 && (<Card>
                 <div style={{fontSize:12,fontWeight:700,color:C.text1,marginBottom:8}}>📰 관련 뉴스</div>
                 {searchResult.news.slice(0,4).map((n,i)=>{const ago=Math.round((Date.now()-n.datetime*1000)/3600000);return(<a key={i} href={n.url} target="_blank" rel="noopener noreferrer" style={{display:'block',padding:'6px 0',borderBottom:i<3?`1px solid ${C.border}`:'none',textDecoration:'none'}}><div style={{fontSize:11,color:C.text1,lineHeight:1.4,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>{n.headlineKo||n.headline}</div><div style={{fontSize:9,color:C.text3,marginTop:2}}>{n.source} · {ago<1?'방금':ago<24?`${ago}h`:`${Math.round(ago/24)}d`}</div></a>);})}
-              </Card>)}
-              {searchResult.insight && (<Card style={{border:`1px solid ${C.accent}`,background:C.accentDim}}>
-                <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}><span style={{fontSize:14}}>🤖</span><span style={{fontSize:11,fontWeight:700,color:C.accent}}>AI 분석</span></div>
-                <div style={{fontSize:11,color:C.text2,lineHeight:1.7,whiteSpace:'pre-line'}}>{searchResult.insight}</div>
-                <div style={{fontSize:9,color:C.text3,marginTop:6}}>투자 결정은 본인의 판단으로.</div>
               </Card>)}
             </div>
             <div style={{textAlign:'center',paddingBottom:4}}><span onClick={()=>{setSearchResult(null);setSearchQuery('');setMetricTip(null)}} style={{fontSize:11,color:C.text3,cursor:'pointer'}}>검색 결과 닫기 ✕</span></div>
@@ -326,25 +481,67 @@ export default function Home() {
           <div>
             <div style={{fontSize:12,fontWeight:700,color:C.text1,marginBottom:8,display:'flex',alignItems:'center',gap:4}}>🪨 원자재 {commodities.length>0&&<span style={{fontSize:8,padding:'1px 5px',borderRadius:8,background:commodities.some(c=>c.marketOpen)?C.greenDim:C.dangerDim,color:commodities.some(c=>c.marketOpen)?C.green:C.text3}}>{commodities.some(c=>c.marketOpen)?'LIVE':'마감'}</span>}</div>
             <div style={{display:'flex',flexDirection:'column',gap:5}}>
-              {commodities.map(item=>{const up=item.change>0;return(<Card key={item.id} onClick={()=>setExCom(exCom===item.id?null:item.id)} active={exCom===item.id} style={{padding:'10px 12px'}}><div style={{display:'flex',alignItems:'center',gap:6}}><span style={{fontSize:16}}>{item.icon}</span><div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:C.text1}}>{item.label}</div><div style={{fontSize:14,fontWeight:700,color:C.text1,fontVariantNumeric:'tabular-nums'}}>${f(item.price)}</div></div><div style={{fontSize:10,fontWeight:700,color:up?C.up:C.down}}>{up?'▲':'▼'}{f(Math.abs(item.change))}%</div></div>{exCom===item.id&&<div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${C.border}`,animation:'slideDown 0.2s'}}><div style={{fontSize:11,color:C.text2,lineHeight:1.5}}>{up?TIPS[item.id]?.up:TIPS[item.id]?.down}</div></div>}</Card>);})}
+              {commodities.map(item=>{const up=item.change>0;return(<Card key={item.id} onClick={()=>{
+                const next=exCom===item.id?null:item.id;
+                setExCom(next);
+                if(next&&!comInsights[item.id]){
+                  setInsightLoading(item.id);
+                  fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+                    type:'quick-insight',assetType:'commodity',
+                    asset:`${item.label}(${item.symbol})`,price:item.price,change:item.change,
+                    allStocks:data.stocks
+                  })}).then(r=>r.json()).then(d=>{if(d.insight)setComInsights(p=>({...p,[item.id]:d.insight}));}).catch(()=>{}).finally(()=>setInsightLoading(null));
+                }
+              }} active={exCom===item.id} style={{padding:'10px 12px'}}><div style={{display:'flex',alignItems:'center',gap:6}}><span style={{fontSize:16}}>{item.icon}</span><div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:C.text1}}>{item.label}</div><div style={{fontSize:14,fontWeight:700,color:C.text1,fontVariantNumeric:'tabular-nums'}}>${f(item.price)}</div></div><div style={{fontSize:10,fontWeight:700,color:up?C.up:C.down}}>{up?'▲':'▼'}{f(Math.abs(item.change))}%</div></div>{exCom===item.id&&<div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${C.border}`,animation:'slideDown 0.2s'}}>{insightLoading===item.id?<div style={{fontSize:11,color:C.text3}}>AI 분석 중...</div>:<div style={{fontSize:11,color:C.text2,lineHeight:1.6}}>{comInsights[item.id]||'—'}</div>}</div>}</Card>);})}
               {commodities.length===0&&<Card style={{padding:'10px 12px',opacity:0.5}}><div style={{fontSize:11,color:C.text3,textAlign:'center'}}>로딩 중...</div></Card>}
             </div>
           </div>
           <div>
             <div style={{fontSize:12,fontWeight:700,color:C.text1,marginBottom:8}}>💱 환율</div>
             <div style={{display:'flex',flexDirection:'column',gap:5}}>
-              {data.fx&&FX_CONFIG.map(item=>{const val=data.fx[item.key];return(<Card key={item.key} onClick={()=>setExFx(exFx===item.key?null:item.key)} active={exFx===item.key} style={{padding:'10px 12px'}}><div style={{display:'flex',alignItems:'center',gap:6}}><span style={{fontSize:14}}>{item.icon}</span><div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:C.text1}}>{item.name}</div><div style={{fontSize:10,color:C.text3}}>{item.label}</div></div><div style={{fontSize:14,fontWeight:700,color:C.text1,fontVariantNumeric:'tabular-nums'}}>{fw(val)}</div></div>{exFx===item.key&&<div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${C.border}`,animation:'slideDown 0.2s'}}><div style={{fontSize:11,color:C.text2,lineHeight:1.5}}>{item.tip(val)}</div></div>}</Card>);})}
+              {data.fx&&FX_CONFIG.map(item=>{const val=data.fx[item.key];return(<Card key={item.key} onClick={()=>{
+                const next=exFx===item.key?null:item.key;
+                setExFx(next);
+                if(next&&!fxInsights[item.key]){
+                  setInsightLoading(item.key);
+                  fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+                    type:'quick-insight',assetType:'fx',
+                    asset:`${item.name}(${item.label})`,price:fw(val),change:null,
+                    allRates:{USD:data.fx.usdkrw+'원',EUR:data.fx.eurkrw+'원','JPY(100)':data.fx.jpykrw+'원',CNY:data.fx.cnykrw+'원'}
+                  })}).then(r=>r.json()).then(d=>{if(d.insight)setFxInsights(p=>({...p,[item.key]:d.insight}));}).catch(()=>{}).finally(()=>setInsightLoading(null));
+                }
+              }} active={exFx===item.key} style={{padding:'10px 12px'}}><div style={{display:'flex',alignItems:'center',gap:6}}><span style={{fontSize:14}}>{item.icon}</span><div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:C.text1}}>{item.name}</div><div style={{fontSize:10,color:C.text3}}>{item.label}</div></div><div style={{fontSize:14,fontWeight:700,color:C.text1,fontVariantNumeric:'tabular-nums'}}>{fw(val)}</div></div>{exFx===item.key&&<div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${C.border}`,animation:'slideDown 0.2s'}}>{insightLoading===item.key?<div style={{fontSize:11,color:C.text3}}>AI 분석 중...</div>:<div style={{fontSize:11,color:C.text2,lineHeight:1.6}}>{fxInsights[item.key]||'—'}</div>}</div>}</Card>);})}
             </div>
           </div>
-          <div>
-            <div style={{fontSize:12,fontWeight:700,color:C.text1,marginBottom:8}}>📚 오늘의 단어</div>
-            <Card style={{padding:'12px',border:`1px solid ${C.gold}`,background:C.goldDim}}>
-              <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}><span style={{fontSize:16}}>{eterm.emoji}</span><div style={{fontSize:13,fontWeight:700,color:C.text1}}>{eterm.term}</div></div>
-              <div style={{fontSize:11,color:C.text2,lineHeight:1.6}}>{eterm.desc}</div>
-              <div onClick={()=>window.location.reload()} style={{fontSize:10,color:C.text3,marginTop:6,cursor:'pointer'}}>다른 단어 ↻</div>
-            </Card>
+          <div style={{display: 'flex', flexDirection: 'column'}}>
+            <div style={{fontSize:12,fontWeight:700,color:C.text1,marginBottom:8}}>😨 시장 공포지수</div>
+            {vix ? (
+              <Card style={{padding:'16px 14px', flex: 1, display: 'flex', flexDirection: 'column', cursor: 'default'}}>
+                <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:10}}>
+                  <span style={{fontSize:20}}>{vix.icon}</span>
+                  <div>
+                    <div style={{fontSize:13,fontWeight:700,color:C.text1}}>{vix.label}</div>
+                    <div style={{fontSize:10,color:C.text3}}>VIX 관련 지표</div>
+                  </div>
+                </div>
+                <div style={{fontSize:24,fontWeight:700,color:C.text1,fontVariantNumeric:'tabular-nums'}}>${vix.price?.toFixed(2)}</div>
+                <div style={{fontSize:12,fontWeight:700,color:vix.change>=0?C.up:C.down,marginTop:2}}>{vix.change>=0?'▲':'▼'} {Math.abs(vix.change).toFixed(2)}%</div>
+                
+                <div style={{marginTop:'auto',paddingTop:16}}>
+                  <div style={{paddingTop:12,borderTop:`1px solid ${C.border}`,fontSize:11,color:C.text2,lineHeight:1.6}}>
+                    <span style={{color:C.text1,fontWeight:600}}>공포지수란?</span> 주식 시장의 불안감을 나타내는 변동성 지표예요.<br/><br/>
+                    • <span style={{color:C.up}}>상승 시</span>: 공포 심리 증가 (하락장 주의)<br/>
+                    • <span style={{color:C.down}}>하락 시</span>: 투자 심리 안정화<br/><br/>
+                    지수가 급등하면 투자자들이 증시를 불안하게 보고 있다는 뜻이에요.
+                  </div>
+                </div>
+              </Card>
+            ) : (
+              <Card style={{padding:'10px 12px',opacity:0.5, flex: 1}}><div style={{fontSize:11,color:C.text3,textAlign:'center',marginTop:20}}>로딩 중...</div></Card>
+            )}
           </div>
         </div>
+
 
         {activeStocks.length > 0 && (
           <div style={{ padding: '12px 16px 0' }}>
@@ -355,7 +552,7 @@ export default function Home() {
               {activeStocks.map(s => {
                 const up = s.change > 0;
                 return (
-                  <Card key={s.symbol} onClick={() => { setSearchQuery(s.symbol); setTimeout(() => { document.querySelector('button[style*="accent"]')?.click(); }, 100); }} style={{ padding: '8px 10px', cursor: 'pointer' }}>
+                  <Card key={s.symbol} onClick={() => doSearch(s.symbol)} style={{ padding: '8px 10px', cursor: 'pointer' }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: C.text1 }}>{s.symbol}</div>
                     <div style={{ fontSize: 13, fontWeight: 700, color: C.text1, fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>${s.price < 1000 ? s.price.toFixed(2) : Math.round(s.price).toLocaleString()}</div>
                     <div style={{ fontSize: 10, fontWeight: 700, color: up ? C.up : C.down, marginTop: 1 }}>{up ? '▲' : '▼'}{Math.abs(s.change).toFixed(2)}%</div>
@@ -367,9 +564,71 @@ export default function Home() {
           </div>
         )}
 
-        <div style={{padding:'16px 16px 0',display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-          {data.news?.length>0&&(<Card onClick={()=>setShowNews(!showNews)} style={{cursor:'pointer'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><div style={{fontSize:12,fontWeight:700,color:C.text1}}>📰 뉴스</div><div style={{fontSize:12,color:C.text3,transform:showNews?'rotate(180deg)':'',transition:'transform 0.2s'}}>▾</div></div>{showNews&&(<div style={{marginTop:8,animation:'slideDown 0.25s'}} onClick={e=>e.stopPropagation()}>{data.news.slice(0,5).map((n,i)=>{const ago=Math.round((Date.now()-n.datetime*1000)/3600000);return(<a key={i} href={n.url} target="_blank" rel="noopener noreferrer" style={{display:'block',padding:'6px 0',borderBottom:i<4?`1px solid ${C.border}`:'none',textDecoration:'none'}}><div style={{fontSize:11,color:C.text1,lineHeight:1.4,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{n.headline}</div><div style={{fontSize:9,color:C.text3,marginTop:1}}>{n.source} · {ago<1?'방금':ago<24?`${ago}h`:`${Math.round(ago/24)}d`}</div></a>);})}</div>)}</Card>)}
-          {!subDone?(<Card onClick={!showSub?()=>setShowSub(true):undefined} style={{cursor:showSub?'default':'pointer',background:showSub?C.card:C.goldDim,border:`1px solid ${showSub?C.border:C.gold}`}}>{!showSub?(<div style={{textAlign:'center'}}><div style={{fontSize:20,marginBottom:4}}>💬</div><div style={{fontSize:13,fontWeight:700,color:C.text1}}>브리핑 받기</div><div style={{fontSize:10,color:C.text2}}>매일 아침 카톡/이메일</div></div>):(<div style={{animation:'slideDown 0.25s'}}><div style={{fontSize:13,fontWeight:700,color:C.text1,marginBottom:10}}>📬 구독</div><input type="tel" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="010-0000-0000" style={{width:'100%',padding:'8px 10px',borderRadius:8,border:`1px solid ${C.border}`,fontSize:12,background:C.bg,color:C.text1,marginBottom:6}} /><input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="email@example.com" style={{width:'100%',padding:'8px 10px',borderRadius:8,border:`1px solid ${C.border}`,fontSize:12,background:C.bg,color:C.text1,marginBottom:8}} /><div style={{display:'flex',gap:4}}><button onClick={()=>setShowSub(false)} style={{flex:1,padding:8,borderRadius:8,border:`1px solid ${C.border}`,background:'transparent',color:C.text2,fontSize:11,cursor:'pointer'}}>취소</button><button onClick={()=>{if(phone||email)setSubDone(true)}} style={{flex:2,padding:8,borderRadius:8,border:'none',background:(phone||email)?C.accent:C.border,color:(phone||email)?'#fff':C.text3,fontSize:11,fontWeight:700,cursor:(phone||email)?'pointer':'default'}}>구독</button></div></div>)}</Card>):(<Card style={{background:C.accentDim,border:`1px solid ${C.accent}`}}><div style={{textAlign:'center'}}><div style={{fontSize:24}}>🎉</div><div style={{fontSize:13,fontWeight:700,color:C.text1,marginTop:4}}>구독 완료!</div></div></Card>)}
+        <div style={{ padding: '16px 16px 0', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {/* 뉴스 슬라이더 */}
+          {data.news?.length > 0 && (
+            <Card onClick={() => setShowNews(!showNews)} style={{ cursor: 'pointer', overflow: 'hidden' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.text1, whiteSpace: 'nowrap' }}>📰 주요 경제 뉴스</div>
+                {!showNews && (
+                  <div key={newsIndex} style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, color: C.text2, animation: 'fadeUp 0.4s', textAlign: 'right' }}>
+                    {data.news[newsIndex]?.headlineKo || data.news[newsIndex]?.headline}
+                  </div>
+                )}
+                <div style={{ fontSize: 12, color: C.text3, transform: showNews ? 'rotate(180deg)' : '', transition: 'transform 0.2s' }}>▾</div>
+              </div>
+              {showNews && (
+                <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}`, animation: 'slideDown 0.25s' }} onClick={e => e.stopPropagation()}>
+                  {data.news.slice(0, 5).map((n, i) => {
+                    const ago = Math.round((Date.now() - n.datetime * 1000) / 3600000);
+                    return (
+                      <a key={i} href={n.url} target="_blank" rel="noopener noreferrer" style={{ display: 'block', padding: '8px 0', borderBottom: i < 4 ? `1px solid ${C.border}` : 'none', textDecoration: 'none' }}>
+                        <div style={{ fontSize: 12, color: C.text1, lineHeight: 1.5, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                          {n.headlineKo || n.headline}
+                        </div>
+                        <div style={{ fontSize: 10, color: C.text3, marginTop: 4 }}>
+                          {n.source} · {ago < 1 ? '방금' : ago < 24 ? `${ago}시간 전` : `${Math.round(ago / 24)}일 전`}
+                        </div>
+                      </a>
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
+          )}
+
+          {/* 구독 박스 - 풀와이드 디자인으로 조정 */}
+          {!subDone ? (
+            <Card onClick={!showSub ? () => setShowSub(true) : undefined} style={{ cursor: showSub ? 'default' : 'pointer', background: showSub ? C.card : C.goldDim, border: `1px solid ${showSub ? C.border : C.gold}` }}>
+              {!showSub ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '4px 0' }}>
+                  <span style={{ fontSize: 20 }}>💬</span>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: C.text1 }}>매일 아침 브리핑 받기</div>
+                    <div style={{ fontSize: 11, color: C.text2, marginTop: 2 }}>카카오톡 / 이메일로 편하게 받아보세요</div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ animation: 'slideDown 0.25s' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: C.text1, marginBottom: 10 }}>📬 구독 정보 입력</div>
+                  <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="010-0000-0000" style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 12, background: C.bg, color: C.text1, marginBottom: 8 }} />
+                  <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="email@example.com" style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 12, background: C.bg, color: C.text1, marginBottom: 10 }} />
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={(e) => { e.stopPropagation(); setShowSub(false); }} style={{ flex: 1, padding: '10px', borderRadius: 8, border: `1px solid ${C.border}`, background: 'transparent', color: C.text2, fontSize: 12, cursor: 'pointer' }}>취소</button>
+                    <button onClick={(e) => { e.stopPropagation(); if (phone || email) setSubDone(true); }} style={{ flex: 2, padding: '10px', borderRadius: 8, border: 'none', background: (phone || email) ? C.accent : C.border, color: (phone || email) ? '#fff' : C.text3, fontSize: 12, fontWeight: 700, cursor: (phone || email) ? 'pointer' : 'default' }}>구독하기</button>
+                  </div>
+                </div>
+              )}
+            </Card>
+          ) : (
+            <Card style={{ background: C.accentDim, border: `1px solid ${C.accent}`, padding: '16px' }}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 28, marginBottom: 6 }}>🎉</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: C.accent }}>구독 완료!</div>
+                <div style={{ fontSize: 11, color: C.text2, marginTop: 4 }}>내일부터 알찬 소식을 보내드릴게요.</div>
+              </div>
+            </Card>
+          )}
         </div>
 
         <div style={{padding:'16px',textAlign:'center'}}><button onClick={()=>window.location.reload()} style={{fontSize:11,padding:'8px 18px',borderRadius:18,border:`1px solid ${C.border}`,background:'transparent',color:C.text2,cursor:'pointer'}}>↻ 새로고침</button></div>

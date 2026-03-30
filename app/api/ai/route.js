@@ -20,17 +20,64 @@ ${marketData}
 중요: 단순히 올랐다/내렸다가 아니라 WHY를 설명하세요. 데이터 간 상관관계를 분석하세요. signals 최대 4개.`;
 
     } else if (type === 'metric-explain') {
-      prompt = `당신은 주식 초보자에게 재무지표를 쉽게 설명하는 전문가예요. 토스 앱처럼 친근한 존댓말로.
+      const { financials } = body;
+      const finCtx = financials ? `
+전체 재무 맥락:
+- PER: ${financials.pe ?? '없음'}
+- PBR: ${financials.pb ?? '없음'}
+- ROE: ${financials.roe != null ? financials.roe.toFixed(1) + '%' : '없음'}
+- 매출성장: ${financials.revenueGrowth != null ? financials.revenueGrowth.toFixed(1) + '%' : '없음'}
+- 순이익률: ${financials.netMargin != null ? financials.netMargin.toFixed(1) + '%' : '없음'}
+- 배당률: ${financials.dividendYield != null ? financials.dividendYield.toFixed(2) + '%' : '없음'}
+- 베타: ${financials.beta != null ? financials.beta.toFixed(2) : '없음'}
+- 52주 고가: ${financials.high52 != null ? '$' + financials.high52.toFixed(0) : '없음'}
+- 52주 저가: ${financials.low52 != null ? '$' + financials.low52.toFixed(0) : '없음'}
+- 현재 주가: ${financials.currentPrice != null ? '$' + financials.currentPrice.toFixed(2) : '없음'}` : '';
+
+      prompt = `당신은 주식 초보자에게 재무지표를 쉽게 설명하는 금융 분석가예요. 토스 앱처럼 친근한 존댓말로 작성하세요.
 
 기업: ${company}
-지표: ${metric} = ${value}
+분석 지표: ${metric} = ${value}
+${finCtx}
 
-이 지표를 아래 형식으로 설명하세요 (3~4문장):
-1. 이 지표가 뭔지 비유로 설명 (예: "PER은 투자금 회수 기간이에요. PER 34면, 지금 수익이 계속된다면 투자금을 34년 만에 회수한다는 뜻이에요.")
-2. ${value}라는 숫자가 높은 건지 낮은 건지 판단 (같은 업종 평균 대비)
-3. 이 기업에 대해 이 숫자가 의미하는 것
+위 재무 데이터를 종합적으로 고려해서 '${metric}'를 아래 순서로 3~4문장 설명하세요:
+1. 이 지표가 뭔지 실생활 비유로 한 문장 설명
+2. ${value}라는 숫자가 이 기업의 다른 지표들과 맥락에서 어떤 의미인지 (단순히 높다/낮다가 아니라, 예: "순이익률이 높은데 매출성장도 빠르다면 → 규모의 경제 효과" 같은 연관 분석)
+3. 이 기업에 투자하는 관점에서 이 숫자가 주는 시사점
 
-투자 권유 없이 객관적으로.`;
+투자 권유 없이 객관적으로. 수치는 그대로 인용하세요.`;
+
+    } else if (type === 'quick-insight') {
+      const { asset, assetType, price, change, allRates, allStocks } = body;
+
+      if (assetType === 'fx') {
+        const ratesCtx = allRates ? Object.entries(allRates).map(([k,v]) => `${k}: ${v}`).join(', ') : '';
+        prompt = `당신은 환율 전문가예요. 토스 앱처럼 친근한 존댓말로 2~3문장만 작성하세요.
+
+오늘 환율 현황: ${ratesCtx}
+
+분석 대상: ${asset} = ${price}
+
+이 환율 수준에 대해 아래를 2~3문장으로 설명하세요:
+1. 이 수준이 최근 흐름에서 높은지 낮은지와 주요 원인 1가지
+2. 일상생활(해외직구·여행·수입물가 등)에 미치는 실질적 영향
+
+숫자는 그대로 인용하고, 투자 권유 없이 객관적으로.`;
+
+      } else {
+        const mktCtx = allStocks ? allStocks.map(s => `${s.label}(${s.symbol}): $${s.price?.toFixed(2)} (${s.change > 0 ? '+' : ''}${s.change?.toFixed(2)}%)`).join(', ') : '';
+        prompt = `당신은 원자재·주식 시장 전문가예요. 토스 앱처럼 친근한 존댓말로 2~3문장만 작성하세요.
+
+오늘 시장 현황: ${mktCtx}
+
+분석 대상: ${asset} ${change > 0 ? '+' : ''}${change?.toFixed(2)}% (현재 $${price?.toFixed(2)})
+
+위 시장 맥락을 종합해 아래를 2~3문장으로 설명하세요:
+1. 왜 이렇게 움직였는지 구체적인 이유 (단순 상승/하락이 아닌 WHY)
+2. 다른 자산들과의 연관성 또는 일반인 실생활에 미치는 영향
+
+숫자는 그대로 인용하고, 투자 권유 없이 객관적으로.`;
+      }
 
     } else {
       prompt = `당신은 경제를 쉽게 설명하는 전문가예요. 토스 앱처럼 친근한 존댓말로 작성하세요.
@@ -38,10 +85,14 @@ ${marketData}
 200자 이내로 "오늘 시장 한줄 정리"를 작성하세요. 전문 용어 없이, 실생활 영향 1개, 부드러운 팁 1개 포함.`;
     }
 
+    const isQuick = type === 'quick-insight' || type === 'metric-explain';
+    const model = isQuick ? 'claude-3-haiku-20240307' : 'claude-sonnet-4-20250514';
+    const max_tokens = isQuick ? 250 : 800;
+
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': CLAUDE_KEY, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 800, messages: [{ role: 'user', content: prompt }] }),
+      body: JSON.stringify({ model, max_tokens, messages: [{ role: 'user', content: prompt }] }),
     });
 
     const data = await res.json();
